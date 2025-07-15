@@ -46,3 +46,4 @@ if st.button("🎙️ Start Recording"):
             st.error("❌ Sorry, could not understand.")
         except sr.RequestError:
             st.error("🔌 Could not request results. Check your internet.")
+
