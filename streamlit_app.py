@@ -1,48 +1,65 @@
 import streamlit as st
+from streamlit_webrtc import webrtc_streamer, AudioProcessorBase, ClientSettings
 import speech_recognition as sr
+import numpy as np
 from textblob import TextBlob
 import pandas as pd
-import os
 from datetime import datetime
+import os
+import av
 
-st.set_page_config(page_title="🎙️ Voice to Text AI", layout="centered")
-st.title("🎤 Voice to Text Complaint App")
+st.set_page_config(page_title="🎙️ Voice to Text Live", layout="centered")
+st.title("🎤 Speak Your Complaint (Live from Browser Mic)")
 
-r = sr.Recognizer()
+recognizer = sr.Recognizer()
+complaints = []
 
-uploaded_file = st.file_uploader("Upload a WAV file", type=["wav"])
+class AudioProcessor(AudioProcessorBase):
+    def __init__(self):
+        self.buffer = b""
+        self.result = None
 
-if uploaded_file is not None:
-    st.info("Processing your uploaded audio...")
+    def recv(self, frame: av.AudioFrame) -> av.AudioFrame:
+        pcm = frame.to_ndarray().flatten().astype(np.int16).tobytes()
+        self.buffer += pcm
 
-    # Save the uploaded file
-    with open("temp.wav", "wb") as f:
-        f.write(uploaded_file.read())
+        try:
+            audio_data = sr.AudioData(self.buffer, 16000, 2)
+            text = recognizer.recognize_google(audio_data)
+            self.result = text
+            self.buffer = b""  # clear buffer once processed
+        except (sr.UnknownValueError, sr.RequestError):
+            self.result = None
+        return frame
 
-    try:
-        with sr.AudioFile("temp.wav") as source:
-            audio = r.record(source)
-            complaint_text = r.recognize_google(audio)
+webrtc_ctx = webrtc_streamer(
+    key="speech-to-text",
+    mode="sendonly",
+    in_audio_enabled=True,
+    client_settings=ClientSettings(
+        media_stream_constraints={"audio": True, "video": False},
+        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+    ),
+    audio_processor_factory=AudioProcessor,
+)
 
-            st.success("📝 Transcription: " + complaint_text)
+if webrtc_ctx.state.playing:
+    if webrtc_ctx.audio_processor:
+        result = webrtc_ctx.audio_processor.result
+        if result:
+            st.success(f"📝 Transcribed: {result}")
 
             # Sentiment analysis
-            blob = TextBlob(complaint_text)
-            polarity = blob.sentiment.polarity
-            subjectivity = blob.sentiment.subjectivity
+            blob = TextBlob(result)
+            polarity = blob.polarity
+            subjectivity = blob.subjectivity
 
             # Save to CSV
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            df = pd.DataFrame([[now, complaint_text, polarity, subjectivity]],
-                            columns=["Timestamp", "Complaint", "Polarity", "Subjectivity"])
+            df = pd.DataFrame([[now, result, polarity, subjectivity]],
+                              columns=["Timestamp", "Complaint", "Polarity", "Subjectivity"])
             file_exists = os.path.exists("complaints.csv")
             df.to_csv("complaints.csv", mode='a', header=not file_exists, index=False)
 
-            st.success("✅ Complaint saved to CSV")
-
-    except sr.UnknownValueError:
-        st.error("Sorry, could not understand the audio.")
-    except sr.RequestError:
-        st.error("Could not request results. Check your internet connection.")
-else:
-    st.info("📢 Please upload a WAV file to proceed.")
+            st.write("**Polarity:**", polarity)
+            st.write("**Subjectivity:**", subjectivity)
