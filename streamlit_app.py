@@ -1,5 +1,5 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, AudioProcessorBase, ClientSettings # Trigger redeploy on Streamlit Cloud
+from streamlit_webrtc import webrtc_streamer, AudioProcessorBase# Trigger redeploy on Streamlit Cloud
 import speech_recognition as sr
 import numpy as np
 from textblob import TextBlob
@@ -35,13 +35,11 @@ class AudioProcessor(AudioProcessorBase):
 webrtc_ctx = webrtc_streamer(
     key="speech-to-text",
     mode="sendonly",
-    in_audio_enabled=True,
-    client_settings=ClientSettings(
-        media_stream_constraints={"audio": True, "video": False},
-        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-    ),
+    in_audio=True,
+    video=False,
     audio_processor_factory=AudioProcessor,
 )
+
 
 if webrtc_ctx.state.playing:
     if webrtc_ctx.audio_processor:
