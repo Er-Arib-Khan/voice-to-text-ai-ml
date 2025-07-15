@@ -1,63 +1,48 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, AudioProcessorBase# Trigger redeploy on Streamlit Cloud
 import speech_recognition as sr
-import numpy as np
 from textblob import TextBlob
 import pandas as pd
-from datetime import datetime
 import os
-import av
+from datetime import datetime
 
-st.set_page_config(page_title="🎙️ Voice to Text Live", layout="centered")
-st.title("🎤 Speak Your Complaint (Live from Browser Mic)")
+st.set_page_config(page_title="🎤 Voice to Text AI", layout="centered")
 
-recognizer = sr.Recognizer()
-complaints = []
+st.title("🎤 Voice to Text Complaint App")
 
-class AudioProcessor(AudioProcessorBase):
-    def __init__(self):
-        self.buffer = b""
-        self.result = None
+# Load existing data
+if os.path.exists("complaints.csv"):
+    df = pd.read_csv("complaints.csv")
+else:
+    df = pd.DataFrame(columns=["Timestamp", "Complaint", "Polarity", "Subjectivity"])
 
-    def recv(self, frame: av.AudioFrame) -> av.AudioFrame:
-        pcm = frame.to_ndarray().flatten().astype(np.int16).tobytes()
-        self.buffer += pcm
-
+# Button to start voice recording
+if st.button("🎙️ Start Recording"):
+    r = sr.Recognizer()
+    with sr.Microphone() as source:
+        st.info("Listening... Please speak clearly.")
+        r.adjust_for_ambient_noise(source, duration=1)
+        audio = r.listen(source)
         try:
-            audio_data = sr.AudioData(self.buffer, 16000, 2)
-            text = recognizer.recognize_google(audio_data)
-            self.result = text
-            self.buffer = b""  # clear buffer once processed
-        except (sr.UnknownValueError, sr.RequestError):
-            self.result = None
-        return frame
-
-webrtc_ctx = webrtc_streamer(
-    key="speech-to-text",
-    mode="sendonly",
-    in_audio=True,
-    video=False,
-    audio_processor_factory=AudioProcessor,
-)
-
-
-if webrtc_ctx.state.playing:
-    if webrtc_ctx.audio_processor:
-        result = webrtc_ctx.audio_processor.result
-        if result:
-            st.success(f"📝 Transcribed: {result}")
+            text = r.recognize_google(audio)
+            st.success("✅ You said: " + text)
 
             # Sentiment analysis
-            blob = TextBlob(result)
-            polarity = blob.polarity
-            subjectivity = blob.subjectivity
+            blob = TextBlob(text)
+            polarity = round(blob.sentiment.polarity, 2)
+            subjectivity = round(blob.sentiment.subjectivity, 2)
+
+            st.write(f"🧠 **Polarity:** `{polarity}`")
+            st.write(f"🎯 **Subjectivity:** `{subjectivity}`")
 
             # Save to CSV
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            df = pd.DataFrame([[now, result, polarity, subjectivity]],
-                              columns=["Timestamp", "Complaint", "Polarity", "Subjectivity"])
-            file_exists = os.path.exists("complaints.csv")
-            df.to_csv("complaints.csv", mode='a', header=not file_exists, index=False)
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            df_new = pd.DataFrame([[timestamp, text, polarity, subjectivity]],
+                                  columns=["Timestamp", "Complaint", "Polarity", "Subjectivity"])
+            df = pd.concat([df, df_new], ignore_index=True)
+            df.to_csv("complaints.csv", index=False)
+            st.success("📁 Complaint saved successfully.")
 
-            st.write("**Polarity:**", polarity)
-            st.write("**Subjectivity:**", subjectivity)
+        except sr.UnknownValueError:
+            st.error("❌ Sorry, could not understand.")
+        except sr.RequestError:
+            st.error("🔌 Could not request results. Check your internet.")

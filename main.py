@@ -8,7 +8,7 @@ r = sr.Recognizer()
 
 def record_text():
     with sr.Microphone() as source:
-        print("\n🎤 Speak your complaint (say 'stop recording' to exit):")
+        print("🎤 Speak your complaint...")
         r.adjust_for_ambient_noise(source, duration=1)
         audio = r.listen(source)
 
@@ -37,12 +37,7 @@ def save_complaint(complaint_text):
     df.to_csv("complaints.csv", mode='a', header=not file_exists, index=False)
     print("📝 Complaint saved successfully.")
 
-# 🔁 Loop to keep recording
-while True:
-    complaint = record_text()
-    
-    if complaint:
-        if "stop recording" in complaint.lower():
-            print("🛑 Stopping complaint recording.")
-            break
-        save_complaint(complaint)
+# MAIN FLOW
+complaint = record_text()
+if complaint:
+    save_complaint(complaint)
